@@ -1,0 +1,12 @@
+#include <cuda_runtime.h>
+#include <device_launch_parameters.h>
+#include <thrust/host_vector.h>
+#include <thrust/device_vector.h>
+#include <thrust/copy.h>
+#include <thrust/sequence.h>
+#include <thrust/remove.h>
+#include <curand_kernel.h>
+#include <fstream>
+#include <string>
+#include <ctime>
+#include <thread>

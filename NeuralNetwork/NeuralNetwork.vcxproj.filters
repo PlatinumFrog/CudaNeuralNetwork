@@ -20,15 +20,27 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <None Include="network.cu">
+    <CudaCompile Include="network.cu">
       <Filter>Source Files</Filter>
-    </None>
-    <None Include="network.cuh">
+    </CudaCompile>
+    <CudaCompile Include="network.cuh">
       <Filter>Header Files</Filter>
-    </None>
+    </CudaCompile>
+    <CudaCompile Include="color.cu">
+      <Filter>Source Files</Filter>
+    </CudaCompile>
+    <CudaCompile Include="color.cuh">
+      <Filter>Header Files</Filter>
+    </CudaCompile>
+    <CudaCompile Include="utility.cu">
+      <Filter>Source Files</Filter>
+    </CudaCompile>
+    <CudaCompile Include="utility.cuh">
+      <Filter>Header Files</Filter>
+    </CudaCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="Header.h">
+    <ClInclude Include="header.cuh">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

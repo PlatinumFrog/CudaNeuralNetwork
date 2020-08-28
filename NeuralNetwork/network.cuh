@@ -1,57 +1,71 @@
-#include <cuda_runtime.h>
-#include <device_launch_parameters.h>
-#include <thrust/host_vector.h>
-#include <thrust/device_vector.h>
-#include <thrust/copy.h>
-#include <thrust/sequence.h>
-#include <thrust/remove.h>
-#include <curand_kernel.h>
+#include "utility.cuh"
+#include "color.cuh"
 
-struct color {
-
-	uint32_t col;
-
-	color(uint8_t r, uint8_t g, uint8_t b, uint8_t a);
-	color(uint32_t c);
-
-	uint8_t gr();
-	uint8_t gg();
-	uint8_t gb();
-	uint8_t ga();
-
-	void sr(uint8_t r);
-	void sg(uint8_t g);
-	void sb(uint8_t b);
-	void sa(uint8_t a);
-
-	bool operator==(color c);
-
-};
 
 class Network {
 private:
+
+	//std::string filename;
+
+	size_t satisfaction;
+
+	size_t nLayers;
+	
+	bool isRunning;
+
+	std::thread runThread;
 
 	thrust::device_vector<float> values;
 	thrust::device_vector<float> biases;
 	thrust::device_vector<float> weights;
 
 	thrust::device_vector<uint32_t> weightOffsets;
+	thrust::device_vector<uint32_t> weightSizes;
 	thrust::device_vector<uint32_t> layerOffsets;
 	thrust::device_vector<uint32_t> layerSizes;
-	thrust::device_vector<uint32_t> currentLayer;
+	//thrust::device_vector<uint32_t> currentLayer;
 
-	unsigned long long satisfaction;
+	/*void shiftLayers(uint32_t A, uint32_t B, uint32_t shiftAmount);
+
+	void swapLayers(uint32_t A, uint32_t B);*/
+
+	
 
 public:
 
 	Network();
-	Network(size_t nLayers, size_t sLayer);
 
-	~Network();
+	//Network(std::string filename);
 
-	void init();
+	Network(uint32_t nl, uint32_t sl);
+	
+	void pushBack(uint32_t size);
 
-	void train();
+	/*void load();
+
+	void load(std::string filename);
+
+	void save();
+
+	void save(std::string filename);*/
 
 	void run();
+
+	/*void pullFront(uint32_t size);
+
+	void add(uint32_t index, uint32_t size);
+
+	void mod(uint32_t index, uint32_t size);
+
+	void del(uint32_t index);
+
+	void train();*/
+	
+	
+
+	void play();
+
+	void pause();
+	
+	~Network();
 };

@@ -4,144 +4,152 @@ __device__ float sigma(float x) {
 	return x / (1 + ((x < 0) ? -x : x));
 }
 
-uint32_t nShift(uint32_t n) {
-	n--;
-	n |= n >> 1;
-	n |= n >> 2;
-	n |= n >> 4;
-	n |= n >> 8;
-	n |= n >> 16;
-	n++;
-	return n;
+__global__ void init1(uint32_t *A, uint32_t size) {
+	uint32_t id = (blockIdx.x * blockDim.x) + threadIdx.x;
+	if(id < size) A[id] = 1;
 }
-/*
-Parameters:
-	Weights, Biases, Values, Weight Offsets, Bias Offsets, Value Offsets, Layer Number
-*/
-__global__ void calcNodes(float *w, float *b, float *v, uint32_t *wo, uint32_t *lo, uint32_t *ls, uint32_t *ln) {
-	if(ln[0] > 0) {
 
-		uint32_t id = (blockIdx.x * blockDim.x) + threadIdx.x;
+__global__ void initn(uint32_t *A, uint32_t size, uint32_t n) {
+	uint32_t id = (blockIdx.x * blockDim.x) + threadIdx.x;
+	if(id < size) A[id] = n;
+}
 
-		// [0:         Weight Index Offset]
-		// [1:  Current Layer Index Offset]
-		// [2:          Current Layer Size]
-		// [3: Previous Layer Index Offset]
-		// [4:         Previous Layer Size]
-		__shared__ size_t offsets[5];
+__global__ void initMult(uint32_t *A, uint32_t size, uint32_t mult) {
+	uint32_t id = (blockIdx.x * blockDim.x) + threadIdx.x;
+	if(id < size) A[id] = id * mult;
+}
 
-		if(threadIdx.x == 0){
-			offsets[0] = wo[ln[0]];
-			offsets[1] = lo[ln[0]];
-			offsets[2] = ls[ln[0]];
-			offsets[3] = lo[ln[0] - 1];
-			offsets[4] = ls[ln[0] - 1];
+//Parameters: Weights, Biases, Values, Weight Offsets, Layer Offsets, Layer Sizes, Max ID
+__global__ void calcAll(float *w, float *b, float *v, uint32_t *wo, uint32_t *lo, uint32_t *ls, uint32_t s) {
+
+	uint32_t id = (blockIdx.x * blockDim.x) + threadIdx.x;
+	if(id < s) {
+		uint32_t ln = 0;
+		while(id > lo[ln]) ln++;
+
+		float sum = 0;
+		for(uint32_t i = 0; i < ls[ln - 1]; i++) {
+			sum += w[wo[ln] + ((id - lo[ln]) * ls[ln - 1]) + i] * v[lo[ln - 1] + i];
 		}
-		__syncthreads();
+		v[id] = sigma(sum + b[id]);
+	}
 
-		if(id < offsets[2]) {
-			float sum = 0;
-			for(uint32_t i = 0; i < offsets[4]; i++) {
-				sum += w[offsets[0] + ((id * offsets[4]) + i)] * v[offsets[3] + i];
-			}
-			v[offsets[1] + id] = sigma(sum + b[offsets[1] + id]);
+}
+
+Network::Network() : satisfaction(0), nLayers(0), isRunning(false) {}
+
+Network::Network(uint32_t nl, uint32_t sl) : satisfaction(0), nLayers(nl), isRunning(false) {
+	values.resize(nl * sl, 1);
+	biases.resize(nl * sl, 1);
+	weights.resize(nl * sl * sl, 1);
+	layerOffsets.resize(nl, 0);
+	layerSizes.resize(nl, sl);
+	weightOffsets.resize(nl, 0);
+	weightSizes.resize(nl, sl * sl);
+	uint32_t blocks = 0, threads = 0;
+	utility::findOccupancy(layerOffsets.size(), &blocks, &threads);
+	initMult<<<blocks, threads>>>(thrust::raw_pointer_cast(&layerOffsets[0]), (uint32_t)layerOffsets.size(), sl);
+	utility::findOccupancy(weightOffsets.size(), &blocks, &threads);
+	initMult<<<blocks, threads>>>(thrust::raw_pointer_cast(&weightOffsets[0]), (uint32_t)layerOffsets.size(), sl * sl);
+}
+
+void Network::pushBack(uint32_t size) {
+
+	if(nLayers > 0) {
+
+		uint32_t pLayerSize = layerSizes.back();
+		uint32_t pLayerOffset = layerOffsets.back();
+		uint32_t pWeightSize = weightSizes.back();
+		uint32_t pWeightOffset = weightOffsets.back();
+
+		weightOffsets.push_back(pWeightOffset + pWeightSize);
+		layerOffsets.push_back(pLayerOffset + pLayerSize);
+		
+		weightSizes.push_back(pLayerSize * size);
+		layerSizes.push_back(size);
+
+		values.resize(values.size() + size, 1);
+		biases.resize(biases.size() + size, 1);
+		weights.resize(weights.size() + (pLayerSize * size), 1);
+
+	} else {
+
+		layerSizes.push_back(size);
+		layerOffsets.push_back(0);
+		weightOffsets.push_back(0);
+		weightSizes.push_back(0);
+		values.resize(size,1);
+		biases.resize(size,1);
+
+	}
+	nLayers++;
+}
+
+void Network::run() {
+	while(isRunning){
+		if(nLayers > 1) {
+			uint32_t blocks = 0;
+			uint32_t threads = 0;
+
+			utility::findOccupancy(values.size(), &blocks, &threads);
+
+			std::cout << "Exec: [" << values.size() << "]:[" << blocks << ", " << threads << "]:[";
+			clock_t tb = clock();
+			calcAll<<<blocks, threads>>>(
+				thrust::raw_pointer_cast(&weights[0]),
+				thrust::raw_pointer_cast(&biases[0]),
+				thrust::raw_pointer_cast(&values[0]),
+				thrust::raw_pointer_cast(&weightOffsets[0]),
+				thrust::raw_pointer_cast(&layerOffsets[0]),
+				thrust::raw_pointer_cast(&layerSizes[0]),
+				(uint32_t)values.size()
+			);
+			std::cout << ((float)clock() - (float)tb) / CLOCKS_PER_SEC << "s]\n";
+			
 		}
 	}
 }
 
-color::color(uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
-	sr(r);
-	sg(g);
-	sb(b);
-	sa(a);
-}
-color::color(uint32_t c) {
-	this->col = c;
-}
-
-uint8_t color::gr() {
-	return (uint8_t)(this->col & 255U);
-}
-uint8_t color::gg() {
-	return (uint8_t)((this->col & (255U << 8U)) >> 8U);
-}
-uint8_t color::gb() {
-	return (uint8_t)((this->col & (255U << 16U)) >> 16U);
-}
-uint8_t color::ga() {
-	return (uint8_t)((this->col & (255U << 24U)) >> 24U);
-}
-
-void color::sr(uint8_t r) {
-	this->col = (this->col & ~(255U) | (uint32_t)r);
-}
-void color::sg(uint8_t g) {
-	this->col = ((this->col & ~(255U << 8U)) | (((uint32_t)g) << 8U));
-}
-void color::sb(uint8_t b) {
-	this->col = ((this->col & ~(255U << 16U)) | (((uint32_t)b) << 16U));
-}
-void color::sa(uint8_t a) {
-	this->col = ((this->col & ~(255U << 24U)) | (((uint32_t)a) << 24U));
-}
-
-bool color::operator==(color c) {
-	return this->col == c.col;
-}
-
-Network::Network() : satisfaction(0) {
-	
-
-
-}
-
-Network::Network(size_t nLayers, size_t sLayer) : satisfaction(0) {
-
-	values.resize(nLayers * sLayer, 0);
-	biases.resize(nLayers * sLayer, 0);
-	weights.resize(nLayers * sLayer * sLayer, 0);
-	currentLayer.resize(1);
-	currentLayer[0] = 0;
-	for(uint32_t i = 0; i < nLayers; i++) {
-		weightOffsets.push_back((uint32_t)(i * sLayer * sLayer));
-		layerOffsets.push_back((uint32_t)(i * sLayer));
-		layerSizes.push_back((uint32_t)sLayer);
+void Network::play() {
+	if(!isRunning){
+		isRunning = true;
+		if(runThread.joinable()) {
+			runThread.join();
+			runThread.~thread();
+		}
+		runThread = std::thread(&Network::run, this);
 	}
+}
+
+void Network::pause() {
+	if(isRunning){
+		isRunning = false;
+		runThread.join();
+	}
+	cudaDeviceSynchronize();
 }
 
 Network::~Network() {
-	
-}
-
-void Network::init() {
-
-}
-
-void Network::train() {}
-
-void Network::run() {
-	uint32_t blocks = 0;
-	uint32_t threads = 0;
-	for(uint32_t i = 1; i < layerSizes.size(); i++) {
-		currentLayer[0] = i;
-		uint32_t layerSize = layerSizes[i];
-		if(layerSize > 0 && layerSize < 1024 ) {
-			threads = nShift(layerSize);
-			blocks = 1;
-		}
-		else if(layerSize > 1024) {
-			threads = 1024;
-			blocks = (uint32_t)ceil(layerSize / threads);
-		}
-		if(layerSize > 0) calcNodes<<<blocks,threads>>>(
-			thrust::raw_pointer_cast(&weights[0]),
-			thrust::raw_pointer_cast(&biases[0]),
-			thrust::raw_pointer_cast(&values[0]),
-			thrust::raw_pointer_cast(&weightOffsets[0]),
-			thrust::raw_pointer_cast(&layerOffsets[0]),
-			thrust::raw_pointer_cast(&layerSizes[0]),
-			thrust::raw_pointer_cast(&currentLayer[0])
-		);
-		cudaDeviceSynchronize();
-	}
+	cudaDeviceSynchronize();
+	weightOffsets.clear();
+	weightSizes.clear();
+	layerOffsets.clear();
+	layerSizes.clear();
+	weights.clear();
+	biases.clear();
+	values.clear();
+	weightOffsets.shrink_to_fit();
+	weightSizes.shrink_to_fit();
+	layerOffsets.shrink_to_fit();
+	layerSizes.shrink_to_fit();
+	weights.shrink_to_fit();
+	biases.shrink_to_fit();
+	values.shrink_to_fit();
+	weightOffsets.~device_vector();
+	weightSizes.~device_vector();
+	layerOffsets.~device_vector();
+	layerSizes.~device_vector();
+	weights.~device_vector();
+	biases.~device_vector();
+	values.~device_vector();
 }

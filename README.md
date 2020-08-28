@@ -23,4 +23,4 @@ Planned Features:
     
     Networks can be edited visually.
     
-    Inpot and output layers can be modified, and connected/disconnected to networks.
+    Input and output layers can be modified, and connected/disconnected to networks.

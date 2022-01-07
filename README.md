@@ -1,7 +1,7 @@
 # CudaNeuralNetwork
 This is a C++ CUDA powered neural network editor.
 
-Current Features: Run a dummy neural network to analize speed and memory usage statistics.
+Current Features: Run a dummy neural network to analyze speed and memory usage statistics.
   
 Planned Features:
 
